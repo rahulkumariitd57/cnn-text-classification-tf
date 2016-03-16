@@ -1,8 +1,10 @@
 import numpy as np
 import re
+import csv
 import itertools
 from collections import Counter
 
+DEFAULT_PADDING_WORD="<PAD/>"
 
 def clean_str(string):
     """
@@ -45,6 +47,34 @@ def load_data_and_labels():
     y = np.concatenate([positive_labels, negative_labels], 0)
     return [x_text, y]
 
+def load_data_and_labels_v2():
+    ts_file="./data/cat_data/test_data_16feb.csv"
+    tr_file="./data/cat_data/prdcat_16feb.csv"
+    file_tr=open(tr_file,'rb')
+    file_ts=open(ts_file,'rb')
+    reader_tr = csv.reader(file_tr)
+    reader_ts = csv.reader(file_ts)
+    x_tr_text=[]
+    y_tr_text=[]
+    x_ts_text=[]
+    y_ts_text=[]
+    for i,row in enumerate(reader_tr):
+        if i>0:
+            x_tr_text.append(row[0])
+            y_tr_text.append(row[1])
+    x_tr_text = [clean_str(sent) for sent in x_tr_text]
+    x_tr_text = [s.split(" ") for s in x_tr_text]
+    for i,row in enumerate(reader_ts):
+        if i>0:
+            x_ts_text.append(row[0])
+            y_ts_text.append(row[1])
+    x_ts_text = [clean_str(sent) for sent in x_ts_text]
+    x_ts_text = [s.split(" ") for s in x_ts_text]
+    return [x_tr_text, y_tr_text, x_ts_text, y_ts_text]
+
+
+
+
 
 def pad_sentences(sentences, padding_word="<PAD/>"):
     """
@@ -59,6 +89,22 @@ def pad_sentences(sentences, padding_word="<PAD/>"):
         new_sentence = sentence + [padding_word] * num_padding
         padded_sentences.append(new_sentence)
     return padded_sentences
+
+def pad_sentences_v2(x_tr_text, x_ts_text, padding_word=DEFAULT_PADDING_WORD):
+    sequence_length = max(len(x) for x in x_tr_text)
+    x_tr_padded = []
+    x_ts_padded = []
+    for i in range(len(x_tr_text)):
+        sentence = x_tr_text[i]
+        num_padding = sequence_length - len(sentence)
+        new_sentence = sentence + [padding_word] * num_padding
+        x_tr_padded.append(new_sentence)
+    for i in range(len(x_ts_text)):
+        sentence = x_ts_text[i]
+        num_padding = sequence_length - len(sentence)
+        new_sentence = sentence + [padding_word] * num_padding
+        x_ts_padded.append(new_sentence)
+    return [x_tr_padded, x_ts_padded]
 
 
 def build_vocab(sentences):
@@ -83,6 +129,24 @@ def build_input_data(sentences, labels, vocabulary):
     y = np.array(labels)
     return [x, y]
 
+def build_input_data_v2(x_tr_padded, y_tr_text, x_ts_padded, y_ts_text):
+    word_counts_x = Counter(itertools.chain(*x_tr_padded))
+    vocabulary_inv_x = [x[0] for x in word_counts_x.most_common()]
+    vocabulary_x = {x: i for i, x in enumerate(vocabulary_inv_x)}
+    word_counts_y = Counter(y_tr_text)
+    vocabulary_inv_y = [x[0] for x in word_counts_y.most_common()]
+    vocabulary_y = {x: i for i, x in enumerate(vocabulary_inv_y)}
+
+    x_tr = np.array([[vocabulary_x[word] for word in sentence] for sentence in x_tr_padded])
+    x_ts = np.array([[vocabulary_x.get(word) or vocabulary_x.get(DEFAULT_PADDING_WORD) for word in sentence] for sentence in x_ts_padded])
+    y_tr=np.zeros((len(y_tr_text),len(vocabulary_inv_y)),dtype=np.int)
+    y_ts=np.zeros((len(y_ts_text),len(vocabulary_inv_y)),dtype=np.int)
+    for i,label in enumerate(y_tr_text):
+        y_tr[i][vocabulary_y[label]]=1
+    for i,label in enumerate(y_ts_text):
+        y_ts[i][vocabulary_y[label]]=1
+    return [x_tr, y_tr, x_ts, y_ts, vocabulary_x, vocabulary_inv_x, vocabulary_y, vocabulary_inv_y]
+    
 
 def load_data():
     """
@@ -95,6 +159,14 @@ def load_data():
     vocabulary, vocabulary_inv = build_vocab(sentences_padded)
     x, y = build_input_data(sentences_padded, labels, vocabulary)
     return [x, y, vocabulary, vocabulary_inv]
+
+def load_cat_data():
+    x_tr_text, y_tr_text, x_ts_text, y_ts_text=load_data_and_labels_v2()
+    print "File reading done"
+    x_tr_padded, x_ts_padded = pad_sentences_v2(x_tr_text, x_ts_text)
+    print "Padding done"
+    return build_input_data_v2(x_tr_padded, y_tr_text, x_ts_padded, y_ts_text)
+
 
 
 def batch_iter(data, batch_size, num_epochs):
@@ -112,3 +184,5 @@ def batch_iter(data, batch_size, num_epochs):
             start_index = batch_num * batch_size
             end_index = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start_index:end_index]
+
+
